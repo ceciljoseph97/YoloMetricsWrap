@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>YOLOmetrics Report</title>
+  <style>
+    :root { --gap: 14px; --card-bg: #0b0f14; --ink: #e5e7eb; --muted: #9ca3af; --accent: #60a5fa; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px; background: #0a0a0a; color: var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+    h1 { margin: 0 0 8px 0; font-size: 24px; }
+    .subtitle { color: var(--muted); margin-bottom: 22px; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+    .tab-btn { appearance: none; border: 1px solid #1f2937; background: #0b1220; color: var(--ink); padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+    .tab-btn[aria-selected="true"] { background: #11203a; border-color: #25406b; color: #a8c7ff; }
+    .tab-panel { display: none; position: relative; }
+    .tab-panel.active { display: block; }
+    .configs { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: var(--gap); }
+    .card { background: var(--card-bg); border: 1px solid #111827; border-radius: 10px; padding: 14px; position: relative; }
+    .card h2 { font-size: 16px; margin: 0 0 10px 0; color: var(--accent); word-break: break-all; }
+    .imgwrap { background: #0a0a0a; border: 1px solid #1f2937; border-radius: 8px; padding: 8px; }
+    .imgwrap h3 { margin: 0 0 6px 0; font-size: 13px; color: var(--muted); }
+    .imgwrap img { width: 100%; height: auto; display: block; border-radius: 6px; cursor: zoom-in; }
+    .missing { border: 1px dashed #374151; color: #6b7280; display: grid; place-items: center; height: 200px; border-radius: 6px; font-size: 13px; }
+    .foot { margin-top: 24px; color: var(--muted); font-size: 12px; }
+    @media (max-width: 920px) { .configs { grid-template-columns: 1fr; } }
+
+    /* Lightbox */
+    .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: none; align-items: center; justify-content: center; z-index: 1000; }
+    .lightbox.show { display: flex; }
+    .lightbox-content { position: relative; max-width: 95vw; max-height: 95vh; overflow: hidden; }
+    .lightbox-img { user-select: none; -webkit-user-drag: none; transform-origin: 0 0; cursor: grab; }
+    .lightbox-controls { position: absolute; left: 50%; transform: translateX(-50%); bottom: 10px; display: flex; gap: 8px; }
+    .lb-btn { background: #111827; color: var(--ink); border: 1px solid #374151; padding: 6px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+    .lb-close { position: absolute; top: 10px; right: 10px; }
+
+    /* JSON viewer */
+    .json-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 18px 0 10px; }
+    .json-toolbar input[type="text"] { background: #0b1220; color: var(--ink); border: 1px solid #1f2937; padding: 6px 10px; border-radius: 6px; }
+    .json-box { background: #0b0f14; border: 1px solid #111827; border-radius: 10px; padding: 10px; white-space: pre; overflow: auto; max-height: 60vh; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; color: #e5e7eb; }
+    .json-status { color: var(--muted); font-size: 12px; margin-left: 6px; }
+
+    /* Source explorer */
+    .code-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0 10px; }
+    .code-toolbar input[type="text"] { background: #0b1220; color: var(--ink); border: 1px solid #1f2937; padding: 6px 10px; border-radius: 6px; min-width: 340px; }
+    .code-box { background: #0b0f14; border: 1px solid #111827; border-radius: 10px; padding: 10px; overflow: auto; max-height: 60vh; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; color: #e5e7eb; }
+    .code-line { white-space: pre; }
+    .code-gutter { display: inline-block; width: 54px; color: #6b7280; user-select: none; }
+    .code-hit { background: rgba(96,165,250,0.18); }
+    /* Two-column layout for JSON + Source explorer */
+    .inspectors { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+    @media (max-width: 1100px) { .inspectors { grid-template-columns: 1fr; } }
+
+    /* Compare UI */
+    .cmp-toggle { width: 18px; height: 18px; accent-color: #60a5fa; cursor: pointer; }
+    .cmp-header { position: absolute; top: 8px; right: 12px; }
+    .cmp-btn { position: fixed; right: 18px; bottom: 18px; background:#2563eb; color:#fff; border:0; padding:10px 14px; border-radius:8px; font-size:13px; cursor:pointer; opacity:0.85; z-index: 1200; }
+    .cmp-btn[disabled] { opacity:0.4; cursor:not-allowed; }
+    .cmp-modal { position: fixed; inset:0; background: rgba(0,0,0,0.92); display:none; z-index:1100; }
+    .cmp-modal.show { display:block; }
+    .cmp-wrap { position:absolute; top:40px; bottom:40px; left:40px; right:40px; overflow:auto; border:1px solid #1f2937; border-radius:10px; background:#0b0f14; padding:14px; }
+    .cmp-close { position:absolute; top:10px; right:14px; background:#111827; color:#e5e7eb; border:1px solid #374151; border-radius:8px; padding:6px 10px; cursor:pointer; }
+    .cmp-row { display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:16px; }
+    .cmp-cell { background:#0a0a0a; border:1px solid #1f2937; border-radius:8px; padding:8px; }
+    .cmp-title { color:#a8c7ff; font-size:13px; margin:0 0 8px 0; }
+    </style>
+</head>
+<body>
+  <h1>YOLOmetrics</h1>
+  <div class="subtitle">Precision/Recall curves and confusion matrices across runs and configs.</div>
+  <div class="tabs" role="tablist" id="topnav">
+    <button class="tab-btn" role="tab" aria-controls="homePage" aria-selected="true">Home</button>
+    <button class="tab-btn" role="tab" aria-controls="evalPage" aria-selected="false">Evaluation</button>
+    <button class="tab-btn" role="tab" aria-controls="analysisPage" aria-selected="false">Calltrace Analysis</button>
+  </div>
+  <section id="homePage" class="tab-panel active" aria-label="Home">
+    <div class="card" style="display:grid; gap:10px;">
+      <div><strong>YOLOmetrics</strong></div>
+      <div>Two tabs:</div>
+      <ul style="margin:0 0 6px 18px; line-height:1.6">
+        <li><em>Evaluation</em>: view PR/P/R/F1 curves, confusion matrices, and validation batches for each *_config. Use the small checkboxes to compare two entries side-by-side.</li>
+        <li><em>Calltrace Analysis</em>: load/search JSON traces and open source files from GitHub or local .py files.</li>
+      </ul>
+      <div class="tabs" role="tablist" style="margin:0">
+        <button class="tab-btn" onclick="document.querySelector('#topnav .tab-btn[aria-controls=\'evalPage\']').click()">YOLO Metrics Evaluation</button>
+        <button class="tab-btn" onclick="document.querySelector('#topnav .tab-btn[aria-controls=\'analysisPage\']').click()">Calltrace Analysis</button>
+      </div>
+    </div>
+  </section>
+  <section id="evalPage" class="tab-panel" aria-label="Evaluation">
+  <div style="margin:8px 0 16px"><input id="dirPicker" type="file" webkitdirectory directory multiple style="display:none" /><button id="addRunBtn" class="tab-btn">+ Add Run (folder)</button></div>
+  <script id="aliasData" type="application/json">{"alias": {"PR": ["pr_curve", "boxpr_curve", "box_pr_curve", "box-pr_curve", "pr-curve", "boxpr-curve", "box_pr-curve", "box-pr-curve", "prcurve", "boxprcurve", "box_prcurve", "box-prcurve", "precision_recall_curve", "boxprecision_recall_curve", "box_precision_recall_curve", "box-precision_recall_curve", "precision-recall", "boxprecision-recall", "box_precision-recall", "box-precision-recall", "pr", "boxpr", "box_pr", "box-pr"], "P": ["p_curve", "boxp_curve", "box_p_curve", "box-p_curve", "p-curve", "boxp-curve", "box_p-curve", "box-p-curve", "pcurve", "boxpcurve", "box_pcurve", "box-pcurve", "precision_curve", "boxprecision_curve", "box_precision_curve", "box-precision_curve", "precision", "boxprecision", "box_precision", "box-precision", "boxboxpcurve", "box_boxpcurve", "box-boxpcurve"], "R": ["r_curve", "boxr_curve", "box_r_curve", "box-r_curve", "r-curve", "boxr-curve", "box_r-curve", "box-r-curve", "rcurve", "boxrcurve", "box_rcurve", "box-rcurve", "recall_curve", "boxrecall_curve", "box_recall_curve", "box-recall_curve", "recall", "boxrecall", "box_recall", "box-recall"], "F1": ["f1_curve", "boxf1_curve", "box_f1_curve", "box-f1_curve", "f1-curve", "boxf1-curve", "box_f1-curve", "box-f1-curve", "f1curve", "boxf1curve", "box_f1curve", "box-f1curve", "f1", "boxf1", "box_f1", "box-f1"], "CM": ["confusion_matrix", "boxconfusion_matrix", "box_confusion_matrix", "box-confusion_matrix", "confusion-matrix", "boxconfusion-matrix", "box_confusion-matrix", "box-confusion-matrix", "cm", "boxcm", "box_cm", "box-cm"], "CM_N": ["confusion_matrix_normalized", "boxconfusion_matrix_normalized", "box_confusion_matrix_normalized", "box-confusion_matrix_normalized", "confusion-matrix-normalized", "boxconfusion-matrix-normalized", "box_confusion-matrix-normalized", "box-confusion-matrix-normalized", "normalized_confusion_matrix", "boxnormalized_confusion_matrix", "box_normalized_confusion_matrix", "box-normalized_confusion_matrix", "confusion_matrix_norm", "boxconfusion_matrix_norm", "box_confusion_matrix_norm", "box-confusion_matrix_norm", "confusion-matrix-norm", "boxconfusion-matrix-norm", "box_confusion-matrix-norm", "box-confusion-matrix-norm", "confusionmatrix_normalized", "boxconfusionmatrix_normalized", "box_confusionmatrix_normalized", "box-confusionmatrix_normalized", "confusionmatrix-normalized", "boxconfusionmatrix-normalized", "box_confusionmatrix-normalized", "box-confusionmatrix-normalized", "confusion_matrix_normalised", "boxconfusion_matrix_normalised", "box_confusion_matrix_normalised", "box-confusion_matrix_normalised", "confusion-matrix-normalised", "boxconfusion-matrix-normalised", "box_confusion-matrix-normalised", "box-confusion-matrix-normalised", "cm_normalized", "boxcm_normalized", "box_cm_normalized", "box-cm_normalized", "cm_norm", "boxcm_norm", "box_cm_norm", "box-cm_norm", "cm-normalized", "boxcm-normalized", "box_cm-normalized", "box-cm-normalized", "cm-norm", "boxcm-norm", "box_cm-norm", "box-cm-norm"]}, "exts": [".png", ".jpg", ".jpeg", ".webp", ".svg"], "canonical": {"PR": "pr_curve.png", "P": "p_curve.png", "R": "r_curve.png", "F1": "f1_curve.png", "CM": "confusion_matrix.png", "CM_N": "confusion_matrix_normalized.png"}}</script>
+  <div class="tabs" role="tablist" id="run-tabs"></div>
+  <div id="noRunsMsg" class="missing">No runs loaded. Use + Add Run (folder) to load results.</div>
+  <div class="lightbox" id="lightbox" aria-hidden="true">
+    <div class="lightbox-content">
+      <img class="lightbox-img" id="lbImg" alt="zoomed" />
+      <button class="lb-btn lb-close" id="lbClose">Close</button>
+      <div class="lightbox-controls">
+        <button class="lb-btn" id="lbZoomIn">+</button>
+        <button class="lb-btn" id="lbZoomOut">-</button>
+        <button class="lb-btn" id="lbReset">Reset</button>
+      </div>
+    </div>
+  </div>
+  <div class="foot">Click an image to zoom (drag to pan, wheel to zoom).</div>
+  <div class="foot">Generated locally. All images embedded; the file is portable.</div>
+  </section>
+  <section id="analysisPage" class="tab-panel" aria-label="Calltrace Analysis">
+  <div class="inspectors">
+    <section>
+      <h2 style="margin:0 0 8px 0; font-size:18px; color:#a8c7ff">JSON Viewer</h2>
+      <div class="json-toolbar">
+        <input id="jsonPicker" type="file" accept="application/json" multiple style="position:absolute; left:-9999px; width:1px; height:1px; opacity:0; pointer-events:none;" />
+        <label id="jsonLoadBtn" for="jsonPicker" class="tab-btn" style="display:inline-block; cursor:pointer;">Browse JSON</label>
+        <button id="jsonBeautify" class="tab-btn">Beautify</button>
+        <button id="jsonCopy" class="tab-btn">Copy</button>
+        <input id="jsonSearch" type="text" placeholder="Search..." />
+        <button id="jsonPrev" class="tab-btn">Prev</button>
+        <button id="jsonNext" class="tab-btn">Next</button>
+        <span id="jsonStatus" class="json-status"></span>
+      </div>
+      <div class="tabs" role="tablist" id="jsonTabs"></div>
+      <pre id="jsonBox" class="json-box"></pre>
+    </section>
+    <section>
+      <h2 style="margin:0 0 8px 0; font-size:18px; color:#a8c7ff">Source Explorer</h2>
+      <div class="code-toolbar">
+        <input id="srcPath" type="text" placeholder="ultralytics/models/yolo/detect/val.py:80" />
+        <button id="srcOpen" class="tab-btn">Open</button>
+        <input id="srcFilePicker" type="file" accept=".py" multiple style="position:absolute; left:-9999px; width:1px; height:1px; opacity:0; pointer-events:none;" />
+        <label id="srcBrowseBtn" for="srcFilePicker" class="tab-btn" style="display:inline-block; cursor:pointer;">Browse .py</label>
+        <span id="srcStatus" class="json-status"></span>
+      </div>
+      <div class="tabs" role="tablist" id="srcTabs"></div>
+      <pre id="codeBox" class="code-box"></pre>
+    </section>
+  </div>
+  </section>
+  <script>
+    (function(){
+      // Scoped tabs: each tablist controls its sibling/descendant panels by matching aria-controls
+      document.querySelectorAll('.tabs').forEach(tablist => {
+        const buttons = Array.from(tablist.querySelectorAll('.tab-btn'));
+        const root = tablist.parentElement || document;
+        function activateButton(btn){
+          const targetId = btn.getAttribute('aria-controls');
+          const panels = Array.from(document.querySelectorAll('.tab-panel'))
+            .filter(p => buttons.some(b => p.id === b.getAttribute('aria-controls')));
+          buttons.forEach(b => b.setAttribute('aria-selected', String(b===btn)));
+          panels.forEach(p => p.classList.toggle('active', p.id === targetId));
+          // If switching topnav, ensure nested tablists activate first child
+          if (tablist.id === 'topnav'){
+            const section = document.getElementById(targetId);
+            if (section){
+              const innerLists = Array.from(section.querySelectorAll('.tabs'));
+              innerLists.forEach(list=>{
+                const first = list.querySelector('.tab-btn');
+                if (first) first.click();
+              });
+              // Toggle compare button visibility based on visible section
+              const evalSection = document.getElementById('evalPage');
+              const cmpBtn = document.querySelector('.cmp-btn');
+              if (cmpBtn) cmpBtn.style.display = (evalSection && evalSection.classList.contains('active')) ? 'block' : 'none';
+            }
+          }
+        }
+        buttons.forEach((btn, i) => {
+          btn.addEventListener('click', () => activateButton(btn));
+          if (i === 0) activateButton(btn);
+        });
+      });
+
+      // Lightbox
+      const lb = document.getElementById('lightbox');
+      const lbImg = document.getElementById('lbImg');
+      const lbClose = document.getElementById('lbClose');
+      const zoomIn = document.getElementById('lbZoomIn');
+      const zoomOut = document.getElementById('lbZoomOut');
+      const reset = document.getElementById('lbReset');
+      let scale = 1;
+      let offsetX = 0, offsetY = 0;
+      let dragging = false; let startX = 0; let startY = 0;
+
+      function apply(){
+        lbImg.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+      }
+      function open(src){
+        lbImg.src = src;
+        scale = 1; offsetX = 0; offsetY = 0; apply();
+        lb.classList.add('show');
+        lb.setAttribute('aria-hidden','false');
+      }
+      function close(){
+        lb.classList.remove('show');
+        lb.setAttribute('aria-hidden','true');
+      }
+
+      document.addEventListener('click', (e)=>{
+        const t = e.target;
+        if (t instanceof HTMLImageElement && t.dataset.lb === '1') {
+          open(t.src);
+        }
+      });
+      lbClose.addEventListener('click', close);
+      lb.addEventListener('click', (e)=>{ if (e.target === lb) close(); });
+      document.addEventListener('keydown', (e)=>{ if (e.key==='Escape') close(); });
+
+      zoomIn.addEventListener('click', ()=>{ scale = Math.min(10, scale*1.2); apply(); });
+      zoomOut.addEventListener('click', ()=>{ scale = Math.max(0.2, scale/1.2); apply(); });
+      reset.addEventListener('click', ()=>{ scale=1; offsetX=0; offsetY=0; apply(); });
+
+      lbImg.addEventListener('mousedown', (e)=>{ dragging=true; startX=e.clientX-offsetX; startY=e.clientY-offsetY; lbImg.style.cursor='grabbing'; });
+      window.addEventListener('mouseup', ()=>{ dragging=false; lbImg.style.cursor='grab'; });
+      window.addEventListener('mousemove', (e)=>{ if(!dragging) return; offsetX=e.clientX-startX; offsetY=e.clientY-startY; apply(); });
+      lbImg.addEventListener('wheel', (e)=>{ e.preventDefault(); const delta = Math.sign(e.deltaY); const factor = delta>0? 1/1.1 : 1.1; scale = Math.min(10, Math.max(0.2, scale*factor)); apply(); }, { passive: false });
+
+      // Compare selection logic (max 2)
+      const cmpModal = document.createElement('div');
+      cmpModal.className = 'cmp-modal';
+      cmpModal.innerHTML = '<button class="cmp-close">Close</button><div class="cmp-wrap" id="cmpWrap"></div>';
+      document.body.appendChild(cmpModal);
+      const cmpWrap = cmpModal.querySelector('#cmpWrap');
+      const cmpClose = cmpModal.querySelector('.cmp-close');
+      cmpClose.addEventListener('click', ()=> cmpModal.classList.remove('show'));
+      const cmpBtn = document.createElement('button');
+      cmpBtn.className = 'cmp-btn';
+      cmpBtn.textContent = 'Compare (0/2)';
+      cmpBtn.disabled = true;
+      document.body.appendChild(cmpBtn);
+      function updateCompareVisibility(){
+        const evalSection = document.getElementById('evalPage');
+        const isEval = !!(evalSection && evalSection.classList.contains('active'));
+        cmpBtn.style.display = isEval ? 'block' : 'none';
+      }
+      updateCompareVisibility();
+
+      const selected = [];
+      function updateCmpBtn(){
+        cmpBtn.textContent = `Compare (${selected.length}/2)`;
+        cmpBtn.disabled = selected.length !== 2;
+      }
+      document.addEventListener('change', (e)=>{
+        const t = e.target;
+        if (!(t instanceof HTMLInputElement) || t.type !== 'checkbox' || !t.classList.contains('cmp-toggle')) return;
+        const meta = { run: t.dataset.run, config: t.dataset.config, metric: t.dataset.metric, cat: t.dataset.cat || null };
+        if (t.checked){
+          if (selected.length >= 2){ t.checked = false; return; }
+          if (selected.length === 1){
+            // enforce same run and same metric category
+            const a = selected[0];
+            if (a.metric !== meta.metric){
+              t.checked = false; alert('Select two entries from the same metric tab (e.g., Precision vs Confidence).'); return;
+            }
+            if (a.run !== meta.run){
+              t.checked = false; alert('Select two configs from the same run to compare.'); return;
+            }
+            if ((a.cat||'') !== (meta.cat||'')){
+              t.checked = false; alert('Select from the same categorical subtab.'); return;
+            }
+          }
+          selected.push(meta);
+        } else {
+          const idx = selected.findIndex(x=> x.run===meta.run && x.config===meta.config && x.metric===meta.metric);
+          if (idx>=0) selected.splice(idx,1);
+        }
+        updateCmpBtn();
+      });
+
+      function findPanelImgs(meta){
+        // Locate the specific RUN panel via its aria-label (run name)
+        const runPanel = Array.from(document.querySelectorAll('[id^="run-"].tab-panel'))
+          .find(p => p.getAttribute('aria-label') === meta.run);
+        if (!runPanel) return [];
+        // Within that run, metric panel id is `${runPanel.id}-${meta.metric}`
+        const metricPanelId = `${runPanel.id}-${meta.metric}`;
+        const metricPanel = document.getElementById(metricPanelId) || runPanel;
+        const cards = Array.from(metricPanel.querySelectorAll('.card'));
+        const match = cards.find(c=> c.querySelector('h2')?.textContent === meta.config);
+        return match ? Array.from(match.querySelectorAll('img')).map(i=> i.src) : [];
+      }
+
+      cmpBtn.addEventListener('click', ()=>{
+        if (selected.length !== 2) return;
+        cmpWrap.innerHTML = '';
+        const [a,b] = selected;
+        const aImgs = findPanelImgs(a);
+        const bImgs = findPanelImgs(b);
+        const maxLen = Math.max(aImgs.length, bImgs.length);
+        for (let i=0;i<maxLen;i++){
+          const row = document.createElement('div'); row.className='cmp-row';
+          const ca = document.createElement('div'); ca.className='cmp-cell'; ca.innerHTML = `<div class="cmp-title">${a.run} / ${a.config} / ${a.metric}</div>`;
+          const cb = document.createElement('div'); cb.className='cmp-cell'; cb.innerHTML = `<div class="cmp-title">${b.run} / ${b.config} / ${b.metric}</div>`;
+          const ia = document.createElement('img'); ia.loading='lazy'; ia.src = aImgs[i]||''; ia.style.width='100%'; ia.style.height='auto';
+          const ib = document.createElement('img'); ib.loading='lazy'; ib.src = bImgs[i]||''; ib.style.width='100%'; ib.style.height='auto';
+          if (ia.src) ca.appendChild(ia); if (ib.src) cb.appendChild(ib);
+          row.appendChild(ca); row.appendChild(cb);
+          cmpWrap.appendChild(row);
+        }
+        cmpModal.classList.add('show');
+      });
+
+      // Add Run button: client-side load of *_config images
+      const addRunBtn = document.getElementById('addRunBtn');
+      const dirPicker = document.getElementById('dirPicker');
+      const runTabBar = document.getElementById('run-tabs');
+      const noRunsMsg = document.getElementById('noRunsMsg');
+      if (addRunBtn && dirPicker) {
+        addRunBtn.addEventListener('click', ()=> dirPicker.click());
+        dirPicker.addEventListener('change', async (e)=>{
+          const files = Array.from(dirPicker.files || []);
+          if (!files.length) return;
+          // Group by top-level selected folder name (run name)
+          const runName = (files[0].webkitRelativePath || files[0].name || 'Run').split('/')[0] || 'Run';
+
+          // Aliases (stems) and extensions from embedded payload
+          const aliasEl = document.getElementById('aliasData');
+          let alias = {PR:[],P:[],R:[],F1:[],CM:[],CM_N:[]}, exts = [".png"], canonical = {};
+          try {
+            const data = JSON.parse(aliasEl?.textContent || '{}');
+            alias = data.alias || alias;
+            exts = data.exts || exts;
+            canonical = data.canonical || {};
+          } catch {}
+
+          // Index selected files by lowercased name for quick lookup
+          const present = new Map();
+          for (const f of files) {
+            const name = (f.webkitRelativePath || f.name).split('/').pop();
+            if (name) present.set(name.toLowerCase(), f);
+          }
+
+          // Build a map: configDirName -> { canonicalFilename -> blobUrl | Array<blobUrl> }
+          const byConfig = new Map();
+          for (const f of files) {
+            const rel = f.webkitRelativePath || f.name;
+            if (!rel) continue;
+            const parts = rel.split('/');
+            if (parts.length < 2) continue; // need at least <Run>/<Config>/...
+            const cfg = parts[1];
+            if (!cfg.endsWith('_config')) continue;
+
+            // Try to resolve metric for this file by alias stems
+            const base = parts[parts.length-1].toLowerCase();
+            // Quick skip if it's not an allowed image type
+            if (!exts.some(ext => base.endsWith(ext))) continue;
+
+            let matchedKey = null; let canonicalName = null;
+            for (const [key, stems] of Object.entries(alias)) {
+              for (const stem of stems) {
+                if (base.startsWith(stem.toLowerCase())) { matchedKey = key; break; }
+              }
+              if (matchedKey) { canonicalName = canonical[matchedKey]; break; }
+            }
+            const m = byConfig.get(cfg) || {};
+            const url = URL.createObjectURL(f);
+            if (matchedKey && canonicalName) {
+              if (!m[canonicalName]) m[canonicalName] = url;
+            } else {
+              // Not a known metric image; add to galleries
+              if (base.startsWith('val_batch') && base.includes('_labels')) {
+                m.VAL_LABELS = m.VAL_LABELS || [];
+                m.VAL_LABELS.push(url);
+              } else if (base.startsWith('val_batch') && base.includes('_pred')) {
+                m.VAL_PRED = m.VAL_PRED || [];
+                m.VAL_PRED.push(url);
+              } else {
+                m.ALL_IMAGES = m.ALL_IMAGES || [];
+                m.ALL_IMAGES.push(url);
+              }
+            }
+            byConfig.set(cfg, m);
+          }
+          // Fallback: if normalized CM missing, reuse raw CM
+          for (const [cfgName, m] of byConfig.entries()){
+            if (!m[canonical.CM_N] && m[canonical.CM]) m[canonical.CM_N] = m[canonical.CM];
+          }
+          if (byConfig.size === 0) return;
+
+          // Create a new run panel DOM mirroring server-rendered structure
+          const container = document.body; // root
+          const runIdx = document.querySelectorAll('[id^="run-"][role="tabpanel"]').length;
+
+          noRunsMsg?.remove();
+          const runBtn = document.createElement('button');
+          runBtn.className = 'tab-btn';
+          runBtn.setAttribute('role','tab');
+          runBtn.setAttribute('aria-controls', `run-${runIdx}`);
+          runBtn.setAttribute('aria-selected', 'false');
+          runBtn.textContent = runName;
+          runTabBar.appendChild(runBtn);
+          const runClose = document.createElement('button');
+          runClose.className = 'tab-btn';
+          runClose.style.background = '#1f2937'; runClose.style.borderColor = '#374151'; runClose.style.color = '#9ca3af';
+          runClose.setAttribute('aria-controls', `run-${runIdx}`);
+          runClose.title = 'Remove';
+          runClose.textContent = '×';
+          runTabBar.appendChild(runClose);
+
+          const runPanel = document.createElement('section');
+          runPanel.id = `run-${runIdx}`;
+          runPanel.className = 'tab-panel';
+          runPanel.setAttribute('role','tabpanel');
+          runPanel.setAttribute('aria-label', runName);
+
+          // Metric tabs
+          const metricTabBar = document.createElement('div');
+          metricTabBar.className = 'tabs';
+          metricTabBar.setAttribute('role','tablist');
+          runPanel.appendChild(metricTabBar);
+
+          const metrics = [
+            ['tab-pr','Precision-Recall', canonical.PR],
+            ['tab-p','Precision vs Confidence', canonical.P],
+            ['tab-r','Recall vs Confidence', canonical.R],
+            ['tab-f1','F1 vs Confidence', canonical.F1],
+            ['tab-cm','Confusion Matrix', canonical.CM],
+            ['tab-cm-norm','Confusion Matrix (Normalized)', canonical.CM_N],
+            ['tab-val-labels','Validation Batches (Labels)','VAL_LABELS'],
+            ['tab-val-pred','Validation Batches (Pred)','VAL_PRED'],
+            ['tab-all-imgs','All Images','ALL_IMAGES']
+          ];
+          const metricPanels = [];
+          metrics.forEach(([mid, label, fname], i) => {
+            const btn = document.createElement('button');
+            btn.className = 'tab-btn';
+            btn.setAttribute('role','tab');
+            const scopedId = `run-${runIdx}-${mid}`;
+            btn.setAttribute('aria-controls', scopedId);
+            btn.setAttribute('aria-selected', i===0 ? 'true' : 'false');
+            btn.textContent = label;
+            metricTabBar.appendChild(btn);
+
+            const panel = document.createElement('section');
+            panel.id = scopedId;
+            panel.className = 'tab-panel' + (i===0 ? ' active' : '');
+            panel.setAttribute('role','tabpanel');
+            panel.setAttribute('aria-label', label);
+            const grid = document.createElement('div');
+            grid.className = 'configs';
+            panel.appendChild(grid);
+
+            Array.from(byConfig.keys()).sort((a,b)=> a.localeCompare(b)).forEach(cfgName => {
+              const card = document.createElement('article');
+              card.className = 'card';
+              const h2 = document.createElement('h2');
+              h2.textContent = cfgName;
+              card.appendChild(h2);
+              // compare checkbox
+              const cmpHeader = document.createElement('div');
+              cmpHeader.className = 'cmp-header';
+              const cb = document.createElement('input');
+              cb.type = 'checkbox'; cb.className = 'cmp-toggle';
+              cb.dataset.run = runName; cb.dataset.config = cfgName; cb.dataset.metric = mid;
+              cmpHeader.appendChild(cb);
+              card.appendChild(cmpHeader);
+              const wrap = document.createElement('div');
+              wrap.className = 'imgwrap';
+              const h3 = document.createElement('h3');
+              h3.textContent = label;
+              wrap.appendChild(h3);
+              const srcMap = byConfig.get(cfgName) || {};
+              const entry = srcMap[fname];
+              if (Array.isArray(entry) && entry.length){
+                const gallery = document.createElement('div');
+                gallery.style.display = 'grid';
+                gallery.style.gridTemplateColumns = 'repeat(2, 1fr)';
+                gallery.style.gap = '10px';
+                entry.forEach(u => {
+                  const w = document.createElement('div'); w.className='imgwrap';
+                  const img = document.createElement('img'); img.loading='lazy'; img.src=u; img.alt=label; img.dataset.lb='1';
+                  w.appendChild(img); gallery.appendChild(w);
+                });
+                card.appendChild(gallery);
+              } else if (typeof entry === 'string') {
+                const img = document.createElement('img');
+                img.loading = 'lazy';
+                img.src = entry;
+                img.alt = label;
+                img.dataset.lb = '1';
+                wrap.appendChild(img);
+              } else {
+                const missing = document.createElement('div');
+                missing.className = 'missing';
+                missing.textContent = 'Missing';
+                wrap.appendChild(missing);
+              }
+              card.appendChild(wrap);
+              grid.appendChild(card);
+            });
+
+            metricPanels.push(panel);
+            runPanel.appendChild(panel);
+          });
+
+          runTabBar.parentElement.insertBefore(runPanel, runTabBar.nextSibling);
+
+          function initTablist(tablist){
+            const buttons = Array.from(tablist.querySelectorAll('.tab-btn'));
+            const root = tablist.parentElement || document;
+            function activateButton(btn){
+              const targetId = btn.getAttribute('aria-controls');
+              const panels = Array.from(root.querySelectorAll('.tab-panel'))
+                .filter(p => p.id && buttons.some(b => p.id === b.getAttribute('aria-controls')));
+              buttons.forEach(b => b.setAttribute('aria-selected', String(b===btn)));
+              panels.forEach(p => p.classList.toggle('active', p.id === targetId));
+            }
+            buttons.forEach((b, i)=>{
+              b.addEventListener('click', ()=> activateButton(b));
+              if (i===0) activateButton(b);
+            });
+          }
+          initTablist(runTabBar);
+          initTablist(metricTabBar);
+
+          // Bind remove for this run
+          runClose.addEventListener('click', ()=>{
+            const targetId = runClose.getAttribute('aria-controls');
+            const panel = document.getElementById(targetId);
+            runBtn.remove(); runClose.remove(); panel?.remove();
+            const first = runTabBar.querySelector('.tab-btn');
+            first?.dispatchEvent(new Event('click'));
+            if (!runTabBar.querySelector('.tab-btn')) {
+              const msg = document.createElement('div');
+              msg.id = 'noRunsMsg'; msg.className = 'missing';
+              msg.textContent = 'No runs loaded. Use + Add Run (folder) to load results.';
+              runTabBar.parentElement?.insertBefore(msg, runTabBar.nextSibling);
+            }
+          });
+        });
+      }
+    })();
+    </script>
+  <script>
+      // JSON viewer logic
+      const jPicker = document.getElementById('jsonPicker');
+      const jBeaut = document.getElementById('jsonBeautify');
+      const jCopy = document.getElementById('jsonCopy');
+      const jSearch = document.getElementById('jsonSearch');
+      const jPrev = document.getElementById('jsonPrev');
+      const jNext = document.getElementById('jsonNext');
+      const jStatus = document.getElementById('jsonStatus');
+      const jBox = document.getElementById('jsonBox');
+
+      // Source explorer elements
+      const sPicker = document.getElementById('srcPicker'); // may be null (folder upload removed)
+      const sOpen = document.getElementById('srcOpen');
+      const sPath = document.getElementById('srcPath');
+      const sStatus = document.getElementById('srcStatus');
+      const codeBox = document.getElementById('codeBox');
+      const sFilePicker = document.getElementById('srcFilePicker');
+      const sTabs = document.getElementById('srcTabs');
+
+      // Large-file friendly settings
+      const MAX_PREVIEW_CHARS = 1000000; // 1MB preview to keep UI responsive
+      const SNIPPET_RADIUS = 20000; // render +-20k chars around match
+
+      let jActive = '';     // current text used for search/render (raw or pretty)
+      let jMode = 'raw';    // 'raw' | 'pretty'
+
+      let jMatches = [];
+      let jIdx = -1;
+
+      function setJStatus(msg){ if (jStatus) jStatus.textContent = msg || ''; }
+      function setSStatus(msg){ if (sStatus) sStatus.textContent = msg || ''; }
+
+      function beautifyText(txt){
+        try { return JSON.stringify(JSON.parse(txt), null, 2); }
+        catch { return txt; }
+      }
+
+      function renderPreviewAround(startIndex){
+        if (!jBox) return;
+        const total = jActive.length;
+        if (typeof startIndex !== 'number' || isNaN(startIndex)) startIndex = 0;
+        const begin = Math.max(0, startIndex - SNIPPET_RADIUS);
+        const end = Math.min(total, startIndex + SNIPPET_RADIUS);
+        const slice = jActive.slice(begin, end);
+        jBox.textContent = slice;
+        if (begin > 0 || end < total) {
+          setJStatus(`Showing ${slice.length.toLocaleString()} of ${total.toLocaleString()} chars (${jMode}). Use search or Beautify to navigate. (` + (begin>0?`…`:'') + `${begin}-${end}` + (end<total?`…`:'') + `)`);
+        } else {
+          setJStatus(`Showing full ${total.toLocaleString()} chars (${jMode})`);
+        }
+      }
+
+      function loadJsonText(txt){
+        jActive = txt || '';
+        jMode = 'raw';
+        // Render preview only
+        renderPreviewAround(0);
+        runJSearch();
+      }
+
+      jPicker?.addEventListener('change', async ()=>{
+        const f = jPicker.files?.[0]; if(!f) return;
+        setJStatus(`Loading ${f.name}...`);
+        try { const txt = await f.text(); loadJsonText(txt); }
+        catch { setJStatus('Failed to load file'); }
+      });
+      jBeaut?.addEventListener('click', ()=>{
+        if (!jActive) return;
+        setJStatus('Beautifying...');
+        setTimeout(()=>{
+          jActive = beautifyText(jActive);
+          jMode = 'pretty';
+          renderPreviewAround(0);
+          runJSearch();
+        }, 0);
+      });
+      jCopy?.addEventListener('click', async ()=>{ try { await navigator.clipboard.writeText(jBox?.textContent||''); setJStatus('Copied'); setTimeout(()=>setJStatus(''), 1200);} catch{} });
+
+      function clearJHighlights(){
+        const txt = jBox?.textContent || '';
+        if (jBox) jBox.textContent = txt;
+      }
+      function highlightJAt(start, end){
+        if (!jBox) return;
+        // Render a small snippet around the match to avoid reflow on huge docs
+        const begin = Math.max(0, start - SNIPPET_RADIUS);
+        const afterPos = Math.min(jActive.length, end + SNIPPET_RADIUS);
+        const before = jActive.slice(begin, start);
+        const hit = jActive.slice(start, end);
+        const after = jActive.slice(end, afterPos);
+        jBox.innerHTML = '';
+        const notePrefix = document.createElement('div');
+        if (begin > 0 || afterPos < jActive.length) {
+          notePrefix.style.color = '#9ca3af';
+          notePrefix.style.fontSize = '11px';
+          notePrefix.textContent = `Snippet ${begin}-${afterPos} of ${jActive.length}`;
+          jBox.appendChild(notePrefix);
+        }
+        const spanBefore = document.createTextNode(before);
+        const mark = document.createElement('mark');
+        mark.style.background = '#3b82f6';
+        mark.style.color = '#0b0f14';
+        mark.textContent = hit;
+        const spanAfter = document.createTextNode(after);
+        jBox.appendChild(spanBefore); jBox.appendChild(mark); jBox.appendChild(spanAfter);
+        mark.scrollIntoView({block:'center'});
+      }
+      function runJSearch(){
+        const q = (jSearch?.value||'');
+        jMatches = []; jIdx = -1; clearJHighlights();
+        if (!q) { setJStatus(''); return; }
+        const text = jActive || '';
+        try {
+          const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\$&'),'gi');
+          let m; while ((m = rx.exec(text))){ jMatches.push([m.index, m.index+m[0].length]); if (jMatches.length>5000) break; }
+          if (jMatches.length){ jIdx = 0; const [s,e] = jMatches[0]; highlightJAt(s,e); setJStatus(`${jMatches.length} match(es)`); }
+          else setJStatus('0 matches');
+        } catch { setJStatus('Invalid regex'); }
+      }
+      jSearch?.addEventListener('input', ()=> runJSearch());
+      jNext?.addEventListener('click', ()=>{ if(!jMatches.length) return; jIdx=(jIdx+1)%jMatches.length; const [s,e]=jMatches[jIdx]; highlightJAt(s,e); });
+      jPrev?.addEventListener('click', ()=>{ if(!jMatches.length) return; jIdx=(jIdx-1+jMatches.length)%jMatches.length; const [s,e]=jMatches[jIdx]; highlightJAt(s,e); });
+
+      // ---- Source Explorer ----
+      const sourceFiles = new Map(); // rel path (lowercase) -> File
+
+      function normalizePath(p){
+        if (!p) return '';
+        p = String(p).replace(/\\/g,'/');
+        // Try to keep from project roots such as ultralytics/, torch/, etc.
+        const anchors = ['ultralytics/','torch/','/site-packages/'];
+        let best = p;
+        for (const a of anchors){
+          const idx = p.toLowerCase().indexOf(a);
+          if (idx >= 0) { best = p.slice(idx); break; }
+        }
+        return best.replace(/^\/+/, '');
+      }
+
+      sPicker?.addEventListener('change', ()=>{
+        const files = Array.from(sPicker.files||[]);
+        let added = 0;
+        for (const f of files){
+          const rel = normalizePath(f.webkitRelativePath || f.name);
+          if (!rel) continue;
+          const key = rel.toLowerCase();
+          if (!sourceFiles.has(key)) { sourceFiles.set(key, f); added++; }
+        }
+        setSStatus(`Indexed ${added} files (total ${sourceFiles.size})`);
+      });
+
+      async function readLocalFile(relPath){
+        const key = normalizePath(relPath).toLowerCase();
+        const f = sourceFiles.get(key);
+        if (!f) return null;
+        try { return await f.text(); } catch { return null; }
+      }
+
+      async function fetchFromGithub(relPath){
+        // Primary: ultralytics main repo
+        const ulBase = 'https://raw.githubusercontent.com/ultralytics/ultralytics/main/';
+        // For torch, try pytorch repo (best effort)
+        const torchBase = 'https://raw.githubusercontent.com/pytorch/pytorch/main/';
+        let url = '';
+        const norm = normalizePath(relPath);
+        if (norm.startsWith('ultralytics/')) url = ulBase + norm;
+        else if (norm.startsWith('torch/')) url = torchBase + norm.slice('torch/'.length);
+        else return null;
+        try {
+          const res = await fetch(url);
+          if (!res.ok) return null;
+          return await res.text();
+        } catch { return null; }
+      }
+
+      function renderCode(text, hlLine){
+        if (!codeBox) return;
+        codeBox.innerHTML = '';
+        const lines = (text||'').split('\n');
+        lines.forEach((ln, i)=>{
+          const row = document.createElement('div');
+          row.className = 'code-line' + ((i+1)===hlLine ? ' code-hit' : '');
+          const gut = document.createElement('span'); gut.className = 'code-gutter'; gut.textContent = String(i+1).padStart(4,' ') + ' | ';
+          const txt = document.createElement('span'); txt.textContent = ln || '';
+          row.appendChild(gut); row.appendChild(txt);
+          codeBox.appendChild(row);
+        });
+        if (hlLine && hlLine>=1 && hlLine<=lines.length){
+          const el = codeBox.children[hlLine-1]; el?.scrollIntoView({block:'center'});
+        }
+      }
+
+      async function openSource(pathSpec){
+        if (!pathSpec) return;
+        let path = pathSpec; let line = null;
+        const m = String(pathSpec).match(/^(.*?):(\d+)$/);
+        if (m){ path = m[1]; line = parseInt(m[2],10)||null; }
+        const normPath = normalizePath(path);
+        if (!/\.py$/i.test(normPath)) { setSStatus('Only Python files (.py) are supported'); return; }
+        setSStatus('Opening...');
+        let text = await fetchFromGithub(path);
+        if (text==null){ setSStatus('Not found on GitHub'); return; }
+        renderCode(text, line);
+        setSStatus(normalizePath(path) + (line?`:${line}`:''));
+      }
+
+      sOpen?.addEventListener('click', ()=> openSource(sPath?.value||''));
+
+      // Local .py browse with subtabs
+      sFilePicker?.addEventListener('change', async ()=>{
+        const files = Array.from(sFilePicker.files||[]);
+        if (!files.length) return;
+        files.forEach((f, idx)=>{
+          if (!/\.py$/i.test(f.name)) return;
+          const btn = document.createElement('button');
+          btn.className = 'tab-btn';
+          btn.setAttribute('role','tab');
+          btn.setAttribute('aria-selected','false');
+          btn.textContent = f.name;
+          btn.addEventListener('click', async ()=>{
+            setSStatus(`Opening ${f.name}...`);
+            try {
+              const txt = await f.text();
+              renderCode(txt, null);
+              Array.from(sTabs.children).forEach(b=>b.setAttribute('aria-selected','false'));
+              btn.setAttribute('aria-selected','true');
+              setSStatus(f.name);
+            } catch { setSStatus('Failed to read local file'); }
+          });
+          sTabs?.appendChild(btn);
+          if (idx === 0) btn.click();
+        });
+      });
+
+      function extractPathAndLineFromContext(){
+        const mark = jBox?.querySelector('mark');
+        const context = mark ? mark.parentElement?.textContent || '' : jBox?.textContent || '';
+        // Match Python file with line number inside parentheses or after path
+        const rx = /(ultralytics\/[\w\/\.-]+\.py):(\d+)/i;
+        const m = rx.exec(context);
+        if (m) return `${m[1]}:${m[2]}`;
+        return null;
+      }
+      const _origHighlight = highlightJAt;
+      highlightJAt = function(start, end){
+        _origHighlight(start, end);
+        const guess = extractPathAndLineFromContext();
+        if (guess && sPath) sPath.value = guess;
+      }
+    </script>
+</body>
+</html>
