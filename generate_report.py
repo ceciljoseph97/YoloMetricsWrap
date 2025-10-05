@@ -227,6 +227,8 @@ def generate_html_multi(runs: List[RunGroup], title: str) -> str:
     .json-toolbar input[type="text"] { background: #0b1220; color: var(--ink); border: 1px solid #1f2937; padding: 6px 10px; border-radius: 6px; }
     .json-box { background: #0b0f14; border: 1px solid #111827; border-radius: 10px; padding: 10px; white-space: pre; overflow: auto; max-height: 60vh; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; color: #e5e7eb; }
     .json-status { color: var(--muted); font-size: 12px; margin-left: 6px; }
+    .src-ref { text-decoration: underline dotted; color: #93c5fd; cursor: pointer; }
+    .src-ref:hover { background: rgba(96,165,250,0.18); }
 
     /* Source explorer */
     .code-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0 10px; }
@@ -926,7 +928,7 @@ def generate_html_multi(runs: List[RunGroup], title: str) -> str:
         const begin = Math.max(0, startIndex - SNIPPET_RADIUS);
         const end = Math.min(total, startIndex + SNIPPET_RADIUS);
         const slice = jActive.slice(begin, end);
-        jBox.textContent = slice;
+        jBox.innerHTML = buildLinkifiedHTML(slice);
         if (begin > 0 || end < total) {
           setJStatus(`Showing ${slice.length.toLocaleString()} of ${total.toLocaleString()} chars (${jMode}). Use search or Beautify to navigate. (` + (begin>0?`…`:'') + `${begin}-${end}` + (end<total?`…`:'') + `)`);
         } else {
@@ -961,8 +963,8 @@ def generate_html_multi(runs: List[RunGroup], title: str) -> str:
       jCopy?.addEventListener('click', async ()=>{ try { await navigator.clipboard.writeText(jBox?.textContent||''); setJStatus('Copied'); setTimeout(()=>setJStatus(''), 1200);} catch{} });
 
       function clearJHighlights(){
-        const txt = jBox?.textContent || '';
-        if (jBox) jBox.textContent = txt;
+        const txt = jBox?.textContent || jActive || '';
+        if (jBox) jBox.innerHTML = buildLinkifiedHTML(txt);
       }
       function highlightJAt(start, end){
         if (!jBox) return;
@@ -980,12 +982,14 @@ def generate_html_multi(runs: List[RunGroup], title: str) -> str:
           notePrefix.textContent = `Snippet ${begin}-${afterPos} of ${jActive.length}`;
           jBox.appendChild(notePrefix);
         }
-        const spanBefore = document.createTextNode(before);
+        const spanBefore = document.createElement('span');
+        spanBefore.innerHTML = buildLinkifiedHTML(before);
         const mark = document.createElement('mark');
         mark.style.background = '#3b82f6';
         mark.style.color = '#0b0f14';
-        mark.textContent = hit;
-        const spanAfter = document.createTextNode(after);
+        mark.innerHTML = buildLinkifiedHTML(hit);
+        const spanAfter = document.createElement('span');
+        spanAfter.innerHTML = buildLinkifiedHTML(after);
         jBox.appendChild(spanBefore); jBox.appendChild(mark); jBox.appendChild(spanAfter);
         mark.scrollIntoView({block:'center'});
       }
@@ -1081,6 +1085,7 @@ def generate_html_multi(runs: List[RunGroup], title: str) -> str:
         if (m){ path = m[1]; line = parseInt(m[2],10)||null; }
         const normPath = normalizePath(path);
         if (!/\.py$/i.test(normPath)) { setSStatus('Only Python files (.py) are supported'); return; }
+        if (normPath.startsWith('torch/')) { setSStatus('Torch source fetch disabled'); return; }
         setSStatus('Opening...');
         let text = await fetchFromGithub(path);
         if (text==null){ setSStatus('Not found on GitHub'); return; }
@@ -1119,11 +1124,75 @@ def generate_html_multi(runs: List[RunGroup], title: str) -> str:
       function extractPathAndLineFromContext(){
         const mark = jBox?.querySelector('mark');
         const context = mark ? mark.parentElement?.textContent || '' : jBox?.textContent || '';
-        // Match Python file with line number inside parentheses or after path
-        const rx = /(ultralytics\/[\w\/\.-]+\.py):(\d+)/i;
-        const m = rx.exec(context);
-        if (m) return `${m[1]}:${m[2]}`;
+        return findFirstPyRef(context);
+      }
+
+      function findFirstPyRef(text){
+        if (!text) return null;
+        const norm = String(text).replace(/\\\\/g,'/');
+        // Accept absolute paths, site-packages, or repo-relative ultralytics/... patterns
+        const patterns = [
+          /(ultralytics\/[\w\/\.-]+\.py):(\d+)/i,
+          /(.*site-packages\/.+?\/(?:ultralytics|torch)\/[\w\/\.-]+\.py):(\d+)/i,
+          /(.*ultralytics\/[\w\/\.-]+\.py):(\d+)/i,
+          /(torch\/[\w\/\.-]+\.py):(\d+)/i,
+          /(.*torch\/[\w\/\.-]+\.py):(\d+)/i
+        ];
+        for (const rx of patterns){
+          const m = rx.exec(norm);
+          if (m) {
+            const src = m[1];
+            const low = src.toLowerCase();
+            const relIdxU = low.indexOf('ultralytics/');
+            const relIdxT = low.indexOf('torch/');
+            const relIdx = relIdxU >= 0 ? relIdxU : relIdxT;
+            const rel = relIdx >= 0 ? src.slice(relIdx) : src;
+            return `${rel}:${m[2]}`;
+          }
+        }
         return null;
+      }
+
+      function escapeHtml(s){
+        return String(s)
+          .replace(/&/g,'&amp;')
+          .replace(/</g,'&lt;')
+          .replace(/>/g,'&gt;')
+          .replace(/\"/g,'&quot;')
+          .replace(/'/g,'&#39;');
+      }
+      function buildLinkifiedHTML(text){
+        const srcPatterns = [
+          /(ultralytics\/[\w\/\.-]+\.py):(\d+)/gi,
+          /(torch\/[\w\/\.-]+\.py):(\d+)/gi,
+          /(.*site-packages\/.+?\/(?:ultralytics|torch)\/[\w\/\.-]+\.py):(\d+)/gi,
+          /(.*ultralytics\/[\w\/\.-]+\.py):(\d+)/gi,
+          /(.*torch\/[\w\/\.-]+\.py):(\d+)/gi
+        ];
+        let html = '';
+        let cursor = 0;
+        const norm = String(text).replace(/\\\\/g,'/');
+        function appendRef(src, line, display){
+          const relIdx = src.toLowerCase().indexOf('ultralytics/');
+          const rel = relIdx >= 0 ? src.slice(relIdx) : src;
+          const ref = `${rel}:${line}`;
+          return `<span class="src-ref" data-ref="${escapeHtml(ref)}">${escapeHtml(display)}</span>`;
+        }
+        // Merge all matches by scanning with a unified regex
+        const master = /(ultralytics\/[\w\/\.-]+\.py):(\d+)|(torch\/[\w\/\.-]+\.py):(\d+)|(.*site-packages\/.+?\/(?:ultralytics|torch)\/[\w\/\.-]+\.py):(\d+)|(.*ultralytics\/[\w\/\.-]+\.py):(\d+)|(.*torch\/[\w\/\.-]+\.py):(\d+)/gi;
+        let m;
+        while ((m = master.exec(norm))) {
+          const idx = m.index;
+          html += escapeHtml(norm.slice(cursor, idx));
+          if (m[1]) html += appendRef(m[1], m[2], m[0]);
+          else if (m[3]) html += appendRef(m[3], m[4], m[0]);
+          else if (m[5]) html += appendRef(m[5], m[6], m[0]);
+          else if (m[7]) html += appendRef(m[7], m[8], m[0]);
+          else if (m[9]) html += appendRef(m[9], m[10], m[0]);
+          cursor = master.lastIndex;
+        }
+        html += escapeHtml(norm.slice(cursor));
+        return html;
       }
       const _origHighlight = highlightJAt;
       highlightJAt = function(start, end){
@@ -1131,6 +1200,25 @@ def generate_html_multi(runs: List[RunGroup], title: str) -> str:
         const guess = extractPathAndLineFromContext();
         if (guess && sPath) sPath.value = guess;
       }
+
+      // Interactive JSON viewer: click/hover to drive Source Explorer
+      jBox?.addEventListener('click', (e)=>{
+        const refEl = (e.target && e.target.closest) ? e.target.closest('.src-ref') : null;
+        if (refEl) {
+          const ref = refEl.getAttribute('data-ref');
+          if (ref) { if (sPath) sPath.value = ref; openSource(ref); }
+          return;
+        }
+        const txt = jBox?.textContent || '';
+        const guess = findFirstPyRef(txt);
+        if (guess){ if (sPath) sPath.value = guess; if (e.shiftKey) openSource(guess); }
+      });
+      jBox?.addEventListener('mouseenter', ()=>{
+        const txt = jBox?.textContent || '';
+        const guess = findFirstPyRef(txt);
+        if (guess) setJStatus(`Detected source ref: ${guess} (Click to open)`);
+      });
+      jBox?.addEventListener('mouseleave', ()=>{ setJStatus(''); });
     """
     parts.append("  <script>" + js2 + "</script>")
     parts.append("</body>")
